@@ -12,7 +12,7 @@ type BitArr struct {
 
 func NewBitArr(bitString string) (*BitArr, error) {
 	l := len(bitString)
-	size := int(math.Ceil(float64(l/8)))
+	size := int(math.Ceil(float64(l) / float64(8)))
 	barr := BitArr{arr: make([]uint8, size), length: l}
 	for i := 0; i < l; i++ {
 		if bitString[i] == 48 {
@@ -87,4 +87,18 @@ func (this *BitArr) Set0(i int) {
 	index := i % 8
 	ops := uint8(uint8(255) - uint8(1)<<(7-index))
 	this.arr[superIndex] = this.arr[superIndex] & ops
+}
+
+func (this *BitArr) Rank0(index int) int {
+	rank := 0
+	for i := 0; i <= index; i++ {
+		if this.Get(i) == 0 {
+			rank += 1
+		}
+	}
+	return rank
+}
+
+func (this *BitArr) Rank1(index int) int {
+	return index + 1 - this.Rank0(index)
 }
