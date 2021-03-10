@@ -6,8 +6,8 @@ import (
 )
 
 func TestNewBasicBitVec(t *testing.T) {
-	str := "10001100000000000000111110001110001111000111000111000111000111001110110101110111011101100000001"
-	bitvec, _ := bitvec2.NewBasicBitVec(str)
+	str := "1000110000000000"
+	bitvec, _ := bitvec2.NewBasicBitVecFromString(str)
 	bitArr, _ := bitvec2.NewBitArr(str)
 	for i := 0; i < len(str); i++ {
 		r1 := bitvec.Rank1(i)

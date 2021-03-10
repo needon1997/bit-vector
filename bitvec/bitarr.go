@@ -10,6 +10,12 @@ type BitArr struct {
 	length int
 }
 
+func NewBitArrBySize(n int) *BitArr {
+	size := int(math.Ceil(float64(n) / float64(8)))
+	barr := BitArr{arr: make([]uint8, size), length: n}
+	return &barr
+}
+
 func NewBitArr(bitString string) (*BitArr, error) {
 	l := len(bitString)
 	size := int(math.Ceil(float64(l) / float64(8)))

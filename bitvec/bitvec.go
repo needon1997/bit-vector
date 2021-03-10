@@ -49,47 +49,13 @@ func (this *BasicBitVector) Rank1(index int) int {
 	r3 = int(Value(*this.blocks[b].blocks[c].blocks[k].rank1))
 	return r1 + r2 + r3
 }
-func NewBasicBitVec(bitString string) (*BasicBitVector, error) {
-	bitVec, err := initBitVecStructure(bitString)
-	if err != nil {
-		return nil, err
-	}
-	size := 0
-	psize := -1
-	for i := 0; i < len(bitVec.blocks); i++ {
-		psize = size
-		size += bitVec.blocks[i].size
-		rankBlockBitArr := ToBitArr(uint(bitVec.bits.Rank1(size - 1)))
-		bitVec.blocks[i].rank1 = &rankBlockBitArr
-		bitVec.blocks[i].rankValue = Value(rankBlockBitArr)
-		subBlockSize := 0
-		pSubBlockSize := -1
-		for j := 0; j < len(bitVec.blocks[i].blocks); j++ {
-			pSubBlockSize = subBlockSize
-			subBlockSize += bitVec.blocks[i].blocks[j].size
-			rankSubBlockBitArr := ToBitArr(uint(bitVec.bits.Rank1(psize+subBlockSize-1) - bitVec.bits.Rank1(psize-1)))
-			bitVec.blocks[i].blocks[j].rank1 = &rankSubBlockBitArr
-			bitVec.blocks[i].blocks[j].rankValue = Value(rankSubBlockBitArr)
-			for k := 0; k < len(bitVec.blocks[i].blocks[j].blocks); k++ {
-				rankBitArr := ToBitArr(uint(bitVec.bits.Rank1(psize+pSubBlockSize+k) - bitVec.bits.Rank1(psize+pSubBlockSize-1)))
-				bitVec.blocks[i].blocks[j].blocks[k].rank1 = &rankBitArr
-				bitVec.blocks[i].blocks[j].blocks[k].rankValue = Value(rankBitArr)
-			}
-		}
-	}
-	return bitVec, err
-}
 
-func initBitVecStructure(bitString string) (*BasicBitVector, error) {
-	bitArr, err := NewBitArr(bitString)
-	if err != nil {
-		return nil, err
-	}
-	strSize := len(bitString)
+func initStructureFromBitArray(bitArr *BitArr) *BasicBitVector {
+	strSize := bitArr.length
 	bv := &BasicBitVector{bits: bitArr, length: strSize}
-	blockSize := int(math.Ceil(math.Log2(float64(strSize)) * math.Log2(float64(len(bitString)))))
+	blockSize := int(math.Ceil(math.Log2(float64(strSize)) * math.Log2(float64(strSize))))
 	bv.blockSize = blockSize
-	blockNum := int(math.Ceil(float64(len(bitString)) / float64(blockSize)))
+	blockNum := int(math.Ceil(float64(strSize) / float64(blockSize)))
 	subBlockSize := int(math.Ceil(0.5 * math.Log2(float64(strSize))))
 	bv.subBlockSize = subBlockSize
 	subBlockNum := int(math.Ceil(float64(blockSize) / float64(subBlockSize)))
@@ -125,5 +91,40 @@ func initBitVecStructure(bitString string) (*BasicBitVector, error) {
 	for k := 0; k < bv.blocks[blockNum-1].blocks[lSubBlockNum-1].size; k++ {
 		bv.blocks[blockNum-1].blocks[lSubBlockNum-1].blocks[k] = &Block{size: 1}
 	}
-	return bv, nil
+	return bv
+}
+func NewBasicBitVec(arr *BitArr) *BasicBitVector {
+	bitVec := initStructureFromBitArray(arr)
+	size := 0
+	psize := -1
+	for i := 0; i < len(bitVec.blocks); i++ {
+		psize = size
+		size += bitVec.blocks[i].size
+		rankBlockBitArr := ToBitArr(uint(bitVec.bits.Rank1(size - 1)))
+		bitVec.blocks[i].rank1 = &rankBlockBitArr
+		bitVec.blocks[i].rankValue = Value(rankBlockBitArr)
+		subBlockSize := 0
+		pSubBlockSize := -1
+		for j := 0; j < len(bitVec.blocks[i].blocks); j++ {
+			pSubBlockSize = subBlockSize
+			subBlockSize += bitVec.blocks[i].blocks[j].size
+			rankSubBlockBitArr := ToBitArr(uint(bitVec.bits.Rank1(psize+subBlockSize-1) - bitVec.bits.Rank1(psize-1)))
+			bitVec.blocks[i].blocks[j].rank1 = &rankSubBlockBitArr
+			bitVec.blocks[i].blocks[j].rankValue = Value(rankSubBlockBitArr)
+			for k := 0; k < len(bitVec.blocks[i].blocks[j].blocks); k++ {
+				rankBitArr := ToBitArr(uint(bitVec.bits.Rank1(psize+pSubBlockSize+k) - bitVec.bits.Rank1(psize+pSubBlockSize-1)))
+				bitVec.blocks[i].blocks[j].blocks[k].rank1 = &rankBitArr
+				bitVec.blocks[i].blocks[j].blocks[k].rankValue = Value(rankBitArr)
+			}
+		}
+	}
+	return bitVec
+}
+
+func NewBasicBitVecFromString(bitstring string) (*BasicBitVector, error) {
+	bitArr, err := NewBitArr(bitstring)
+	if err != nil {
+		return nil, err
+	}
+	return NewBasicBitVec(bitArr), nil
 }
