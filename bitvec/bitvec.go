@@ -77,9 +77,9 @@ func NewBasicBitVec(bitArr *BitArr) *BasicBitVector {
 	for i := 1; i <= blockNum; i++ {
 		var blockRankVal int
 		if i*blockSize < arrSize {
-			blockRankVal = bv.bits.Rank1(i*blockSize - 1)
+			blockRankVal = bv.bits.RangeRank1((i-1)*blockSize, i*blockSize-1) + prevBlockRank
 		} else {
-			blockRankVal = bv.bits.Rank1(arrSize - 1)
+			blockRankVal = bv.bits.RangeRank1((i-1)*blockSize, arrSize-1) + prevBlockRank
 		}
 		bv.superBlockRank.MapValueBounded((i-1)*blockRankBitsNum, i*blockRankBitsNum-1, uint(blockRankVal))
 		prevSubBlockRank := 0
@@ -88,12 +88,12 @@ func NewBasicBitVec(bitArr *BitArr) *BasicBitVector {
 			var subBlockRankVal int
 			if j*subBlockSize+(i-1)*blockSize < arrSize {
 				if j*subBlockSize < blockSize {
-					subBlockRankVal = bv.bits.Rank1((i-1)*blockSize+j*subBlockSize-1) - prevBlockRank
+					subBlockRankVal = bv.bits.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, (i-1)*blockSize+j*subBlockSize-1) + prevSubBlockRank
 				} else {
-					subBlockRankVal = bv.bits.Rank1(i*blockSize-1) - prevBlockRank
+					subBlockRankVal = bv.bits.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, i*blockSize-1) + prevSubBlockRank
 				}
 			} else {
-				subBlockRankVal = bv.bits.Rank1(arrSize-1) - prevBlockRank
+				subBlockRankVal = bv.bits.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, arrSize-1)
 				subBlockLoopEnded = true
 			}
 			bv.subBlockRank.MapValueBounded(subBlockIndex*subBlockRankBitsNum, (1+subBlockIndex)*subBlockRankBitsNum-1, uint(subBlockRankVal))
@@ -103,13 +103,13 @@ func NewBasicBitVec(bitArr *BitArr) *BasicBitVector {
 				var subBlockBitRankVal int
 				if (i-1)*blockSize+(j-1)*subBlockSize+k < arrSize {
 					if (j-1)*subBlockSize+k < blockSize {
-						subBlockBitRankVal = bv.bits.Rank1((i-1)*blockSize+(j-1)*subBlockSize+k-1) - prevSubBlockRank - prevBlockRank
+						subBlockBitRankVal = bv.bits.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, (i-1)*blockSize+(j-1)*subBlockSize+k-1)
 					} else {
-						subBlockBitRankVal = bv.bits.Rank1(i*blockSize-1) - prevSubBlockRank - prevBlockRank
+						subBlockBitRankVal = bv.bits.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, i*blockSize-1)
 						subBlockBitLoopEnded = true
 					}
 				} else {
-					subBlockBitRankVal = bv.bits.Rank1(arrSize-1) - prevSubBlockRank - prevBlockRank
+					subBlockBitRankVal = bv.bits.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, arrSize-1)
 					subBlockBitLoopEnded = true
 				}
 				bv.subBlockBitRank.MapValueBounded(subBlockBitIndex*subBlockBitRankBitsNum, (1+subBlockBitIndex)*subBlockBitRankBitsNum-1, uint(subBlockBitRankVal))
