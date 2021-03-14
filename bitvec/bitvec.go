@@ -2,6 +2,7 @@ package bitvec
 
 import (
 	"math"
+	"unsafe"
 )
 
 type BitVector interface {
@@ -12,19 +13,23 @@ type BitVector interface {
 }
 
 type BasicBitVector struct {
-	bits         *BitArr
-	length       int
-	blockSize    int
-	subBlockSize int
-	blocks       []*Block
-}
-type Block struct {
-	rankValue uint
-	size      int
-	rank1     *BitArr
-	blocks    []*Block
+	length                      int
+	blockSize                   int
+	subBlockSize                int
+	blockRankBitsNum            int
+	subBlockRankBitsNum         int
+	subBlockBitRankBitsNum      int
+	subBlockBitRankIndexBitsNum int
+	subBlockNum                 int
+	superBlockRank              *BitArr
+	subBlockRank                *BitArr
+	subBlockBitRank             *BitArr
+	subBlockBitRankIndex        *BitArr
 }
 
+func (this *BasicBitVector) SizeOf() uintptr {
+	return unsafe.Sizeof(*this) + unsafe.Sizeof(*this.superBlockRank) + unsafe.Sizeof(*this.subBlockBitRank) + unsafe.Sizeof(*this.subBlockRank) + unsafe.Sizeof(*this.subBlockBitRankIndex)
+}
 func (this *BasicBitVector) Rank0(index int) int {
 	return index + 1 - this.Rank1(index)
 }
@@ -33,97 +38,121 @@ func (this *BasicBitVector) Rank1(index int) int {
 	j := index % this.blockSize
 	c := j / this.subBlockSize
 	k := j % this.subBlockSize
-	var (
-		r1, r2, r3 int
-	)
-	if b > 0 {
-		r1 = int(Value(*this.blocks[b-1].rank1))
+	var rank1, rank2, rank3Index uint
+	if b == 0 {
+		rank1 = 0
 	} else {
-		r1 = 0
+		rank1 = this.superBlockRank.GetValueInRange((b-1)*this.blockRankBitsNum, b*this.blockRankBitsNum-1)
 	}
-	if c > 0 {
-		r2 = int(Value(*this.blocks[b].blocks[c-1].rank1))
+	if c == 0 {
+		rank2 = 0
 	} else {
-		r2 = 0
+		rank2 = this.subBlockRank.GetValueInRange((b*this.subBlockNum+c-1)*this.subBlockRankBitsNum, (b*this.subBlockNum+c)*this.subBlockRankBitsNum-1)
 	}
-	r3 = int(Value(*this.blocks[b].blocks[c].blocks[k].rank1))
-	return r1 + r2 + r3
-}
-func NewBasicBitVec(bitString string) (*BasicBitVector, error) {
-	bitVec, err := initBitVecStructure(bitString)
-	if err != nil {
-		return nil, err
-	}
-	size := 0
-	psize := -1
-	for i := 0; i < len(bitVec.blocks); i++ {
-		psize = size
-		size += bitVec.blocks[i].size
-		rankBlockBitArr := ToBitArr(uint(bitVec.bits.Rank1(size - 1)))
-		bitVec.blocks[i].rank1 = &rankBlockBitArr
-		bitVec.blocks[i].rankValue = Value(rankBlockBitArr)
-		subBlockSize := 0
-		pSubBlockSize := -1
-		for j := 0; j < len(bitVec.blocks[i].blocks); j++ {
-			pSubBlockSize = subBlockSize
-			subBlockSize += bitVec.blocks[i].blocks[j].size
-			rankSubBlockBitArr := ToBitArr(uint(bitVec.bits.Rank1(psize+subBlockSize-1) - bitVec.bits.Rank1(psize-1)))
-			bitVec.blocks[i].blocks[j].rank1 = &rankSubBlockBitArr
-			bitVec.blocks[i].blocks[j].rankValue = Value(rankSubBlockBitArr)
-			for k := 0; k < len(bitVec.blocks[i].blocks[j].blocks); k++ {
-				rankBitArr := ToBitArr(uint(bitVec.bits.Rank1(psize+pSubBlockSize+k) - bitVec.bits.Rank1(psize+pSubBlockSize-1)))
-				bitVec.blocks[i].blocks[j].blocks[k].rank1 = &rankBitArr
-				bitVec.blocks[i].blocks[j].blocks[k].rankValue = Value(rankBitArr)
-			}
-		}
-	}
-	return bitVec, err
+	rank3Index = this.subBlockBitRankIndex.GetValueInRange((b*this.subBlockNum+c)*this.subBlockBitRankIndexBitsNum, (b*this.subBlockNum+c+1)*this.subBlockBitRankIndexBitsNum-1)
+	rank3 := this.subBlockBitRank.GetValueInRange((int(rank3Index)*this.subBlockSize+k)*this.subBlockBitRankBitsNum, (int(rank3Index)*this.subBlockSize+k+1)*this.subBlockBitRankBitsNum-1)
+	return int(rank1 + rank2 + rank3)
 }
 
-func initBitVecStructure(bitString string) (*BasicBitVector, error) {
-	bitArr, err := NewBitArr(bitString)
+func NewBasicBitVec(bitArr *BitArr) *BasicBitVector {
+	arrSize := bitArr.length
+
+	blockRankBitsNum := int(math.Ceil(math.Log2(float64(arrSize + 1))))
+	blockSize := int(math.Ceil(math.Log2(float64(arrSize)) * math.Log2(float64(arrSize))))
+	blockNum := int(math.Ceil(float64(arrSize) / float64(blockSize)))
+
+	subBlockRankBitsNum := int(math.Ceil(math.Log2(float64(arrSize + 1))))
+	subBlockSize := int(math.Ceil(0.5 * math.Log2(float64(arrSize))))
+	subBlockNum := int(math.Ceil(float64(blockSize) / float64(subBlockSize)))
+	subBlockBitRankBitsNum := int(math.Ceil(math.Log2(float64(subBlockSize + 1))))
+
+	sqrtN := int(math.Ceil(math.Pow(2, float64(subBlockSize))))
+	subBlockBitRankIndexBitsNum := int(math.Ceil(math.Log2(float64(sqrtN))))
+
+	bv := &BasicBitVector{length: arrSize}
+	bv.blockSize = blockSize
+	bv.subBlockSize = subBlockSize
+	bv.superBlockRank = NewBitArrBySize(blockRankBitsNum * blockNum)
+	bv.subBlockRank = NewBitArrBySize(blockNum * subBlockNum * subBlockRankBitsNum)
+	bv.subBlockBitRank = NewBitArrBySize(sqrtN * subBlockSize * subBlockBitRankBitsNum)
+	bv.subBlockBitRankIndex = NewBitArrBySize(blockNum * subBlockNum * subBlockBitRankIndexBitsNum)
+	bv.blockRankBitsNum = blockRankBitsNum
+	bv.subBlockRankBitsNum = subBlockRankBitsNum
+	bv.subBlockBitRankBitsNum = subBlockBitRankBitsNum
+	bv.subBlockBitRankIndexBitsNum = subBlockBitRankIndexBitsNum
+	bv.subBlockNum = subBlockNum
+	subBlockIndex := 0
+	prevBlockRank := 0
+	//initialize the sqrt(n)  unique bit string with length log n/2
+	for i := 0; i < sqrtN; i++ {
+		temp := NewBitArrBySize(subBlockSize)
+		temp.MapValueBounded(0, subBlockSize-1, uint(i))
+		for j := 0; j < subBlockSize; j++ {
+			rank := temp.Rank1(j)
+			bv.subBlockBitRank.MapValueBounded((i*subBlockSize+j)*subBlockBitRankBitsNum, (i*subBlockSize+j+1)*subBlockBitRankBitsNum-1, uint(rank))
+		}
+	}
+	for i := 1; i <= blockNum; i++ {
+		var blockRankVal int
+		if i*blockSize < arrSize {
+			blockRankVal = bitArr.RangeRank1((i-1)*blockSize, i*blockSize-1) + prevBlockRank
+		} else {
+			blockRankVal = bitArr.RangeRank1((i-1)*blockSize, arrSize-1) + prevBlockRank
+		}
+		bv.superBlockRank.MapValueBounded((i-1)*blockRankBitsNum, i*blockRankBitsNum-1, uint(blockRankVal))
+		prevSubBlockRank := 0
+		subBlockLoopEnded := false
+		for j := 1; j <= subBlockNum && !subBlockLoopEnded; j++ {
+			var subBlockRankVal int
+			if j*subBlockSize+(i-1)*blockSize < arrSize {
+				if j*subBlockSize < blockSize {
+					subBlockRankVal = bitArr.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, (i-1)*blockSize+j*subBlockSize-1) + prevSubBlockRank
+					val := bitArr.GetValueInRange((j-1)*subBlockSize+(i-1)*blockSize, j*subBlockSize+(i-1)*blockSize-1)
+					bv.subBlockBitRankIndex.MapValueBounded(subBlockBitRankIndexBitsNum*((i-1)*subBlockNum+j-1), subBlockBitRankIndexBitsNum*((i-1)*subBlockNum+j)-1, val)
+				} else {
+					subBlockRankVal = bitArr.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, i*blockSize-1) + prevSubBlockRank
+					leftBits := bitArr.GetValueInRange((j-1)*subBlockSize+(i-1)*blockSize, i*blockSize-1)
+					val := leftBits << (j*subBlockSize - blockSize)
+					bv.subBlockBitRankIndex.MapValueBounded(subBlockBitRankIndexBitsNum*((i-1)*subBlockNum+j-1), subBlockBitRankIndexBitsNum*((i-1)*subBlockNum+j)-1, val)
+				}
+			} else {
+				subBlockRankVal = bitArr.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, arrSize-1)
+				leftBits := bitArr.GetValueInRange((j-1)*subBlockSize+(i-1)*blockSize, arrSize-1)
+				val := leftBits << (j*subBlockSize + (i-1)*blockSize - arrSize)
+				bv.subBlockBitRankIndex.MapValueBounded(subBlockBitRankIndexBitsNum*((i-1)*subBlockNum+j-1), subBlockBitRankIndexBitsNum*((i-1)*subBlockNum+j)-1, val)
+				subBlockLoopEnded = true
+			}
+			bv.subBlockRank.MapValueBounded(subBlockIndex*subBlockRankBitsNum, (1+subBlockIndex)*subBlockRankBitsNum-1, uint(subBlockRankVal))
+			subBlockIndex += 1
+			//subBlockBitLoopEnded := false
+			//for k := 1; k <= subBlockSize && !subBlockBitLoopEnded; k++ {
+			//	var subBlockBitRankVal int
+			//	if (i-1)*blockSize+(j-1)*subBlockSize+k < arrSize {
+			//		if (j-1)*subBlockSize+k < blockSize {
+			//			subBlockBitRankVal = bitArr.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, (i-1)*blockSize+(j-1)*subBlockSize+k-1)
+			//		} else {
+			//			subBlockBitRankVal = bitArr.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, i*blockSize-1)
+			//			subBlockBitLoopEnded = true
+			//		}
+			//	} else {
+			//		subBlockBitRankVal = bitArr.RangeRank1((i-1)*blockSize+(j-1)*subBlockSize, arrSize-1)
+			//		subBlockBitLoopEnded = true
+			//	}
+			//	bv.subBlockBitRank.MapValueBounded(subBlockBitIndex*subBlockBitRankBitsNum, (1+subBlockBitIndex)*subBlockBitRankBitsNum-1, uint(subBlockBitRankVal))
+			//	subBlockBitIndex += 1
+			//}
+			prevSubBlockRank = subBlockRankVal
+		}
+		prevBlockRank = blockRankVal
+	}
+
+	return bv
+}
+
+func NewBasicBitVecFromString(bitstring string) (*BasicBitVector, error) {
+	bitArr, err := NewBitArr(bitstring)
 	if err != nil {
 		return nil, err
 	}
-	strSize := len(bitString)
-	bv := &BasicBitVector{bits: bitArr, length: strSize}
-	blockSize := int(math.Ceil(math.Log2(float64(strSize)) * math.Log2(float64(len(bitString)))))
-	bv.blockSize = blockSize
-	blockNum := int(math.Ceil(float64(len(bitString)) / float64(blockSize)))
-	subBlockSize := int(math.Ceil(0.5 * math.Log2(float64(strSize))))
-	bv.subBlockSize = subBlockSize
-	subBlockNum := int(math.Ceil(float64(blockSize) / float64(subBlockSize)))
-	bv.blocks = make([]*Block, blockNum)
-	for i := 0; i < blockNum-1; i++ {
-		bv.blocks[i] = &Block{size: blockSize}
-		bv.blocks[i].blocks = make([]*Block, subBlockNum)
-		for j := 0; j < subBlockNum-1; j++ {
-			bv.blocks[i].blocks[j] = &Block{size: subBlockSize}
-			bv.blocks[i].blocks[j].blocks = make([]*Block, subBlockSize)
-			for k := 0; k < subBlockSize; k++ {
-				bv.blocks[i].blocks[j].blocks[k] = &Block{size: 1}
-			}
-		}
-		bv.blocks[i].blocks[subBlockNum-1] = &Block{size: blockSize - (subBlockNum-1)*subBlockSize}
-		bv.blocks[i].blocks[subBlockNum-1].blocks = make([]*Block, blockSize-(subBlockNum-1)*subBlockSize)
-		for k := 0; k < blockSize-(subBlockNum-1)*subBlockSize; k++ {
-			bv.blocks[i].blocks[subBlockNum-1].blocks[k] = &Block{size: 1}
-		}
-	}
-	bv.blocks[blockNum-1] = &Block{size: strSize - (blockNum-1)*blockSize}
-	lSubBlockNum := int(math.Ceil(float64(bv.blocks[blockNum-1].size) / float64(subBlockSize)))
-	bv.blocks[blockNum-1].blocks = make([]*Block, lSubBlockNum)
-	for j := 0; j < lSubBlockNum-1; j++ {
-		bv.blocks[blockNum-1].blocks[j] = &Block{size: subBlockSize}
-		bv.blocks[blockNum-1].blocks[j].blocks = make([]*Block, subBlockSize)
-		for k := 0; k < subBlockSize; k++ {
-			bv.blocks[blockNum-1].blocks[j].blocks[k] = &Block{size: 1}
-		}
-	}
-	bv.blocks[blockNum-1].blocks[lSubBlockNum-1] = &Block{size: bv.blocks[blockNum-1].size - (lSubBlockNum-1)*subBlockSize}
-	bv.blocks[blockNum-1].blocks[lSubBlockNum-1].blocks = make([]*Block, bv.blocks[blockNum-1].size-(lSubBlockNum-1)*subBlockSize)
-	for k := 0; k < bv.blocks[blockNum-1].blocks[lSubBlockNum-1].size; k++ {
-		bv.blocks[blockNum-1].blocks[lSubBlockNum-1].blocks[k] = &Block{size: 1}
-	}
-	return bv, nil
+	return NewBasicBitVec(bitArr), nil
 }
