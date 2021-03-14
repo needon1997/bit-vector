@@ -53,7 +53,7 @@ func ToBitArr(val uint) BitArr {
 	cval := val
 	blockSize := 0
 	for val != 0 {
-		val = val >> 7
+		val = val >> 8
 		blockSize += 1
 	}
 	arr := make([]uint8, blockSize)
